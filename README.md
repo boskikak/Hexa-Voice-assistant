@@ -9,7 +9,8 @@ Voice Assistant based on ESP32 S3 N16R8 with stereo speakers and simply led cloc
 - microphone INMP411
 - led ring 85mm (24diodes)
 - buzzer 3V
-- speaker fabric 1000uF 10V
+- speaker fabric
+- capacitor 1000uF 10V
 - usb C socket
 - usb C cable
 - 3 tact switch 6x6 h=8
