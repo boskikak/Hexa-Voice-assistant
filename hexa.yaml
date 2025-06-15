@@ -1,0 +1,555 @@
+substitutions:
+  friendly_name: "Hexa"
+  leds: "24"  #number of diodes in the strip
+  waiting_time: "6s" #duration of listening assistant
+  led_power: '40%'
+  vol_step: "0.08"  #volume step
+  vol_start: "0.48" #starting music volume
+
+# PINOUT
+  pin_buzzer: GPIO21 
+  pin_leds: GPIO38 #DI
+  pin_lrclk_spk: GPIO7 #LCK
+  pin_bclk_spk: GPIO5 #BCK
+  pin_din_spk: GPIO6 #DIN
+  pin_lrclk_mic: GPIO15 #WS
+  pin_bclk_mic: GPIO16 #SCK
+  pin_din_mic: GPIO17 #DIN
+  pin_vol_up: "13"
+  pin_vol_down: "14"
+  pin_play: "18"
+
+esphome:
+  name: "hexa"
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+
+      CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ".........................................."
+  on_client_connected:
+     - script.execute: loading
+     - delay: 1s
+     - media_player.volume_set: !lambda return ${vol_start};
+     - script.execute: reset_ww
+     - delay: 2s
+     - switch.turn_on: led_clock
+     - number.set:
+        id: vol_music
+        value: ${vol_start}
+
+ota:
+  - platform: esphome
+    password: "...................................."
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Hexa Fallback Hotspot"
+    password: "................................."
+
+captive_portal:
+
+
+button:
+  - platform: restart
+    name: "Reboot"
+    icon: mdi:restart
+
+binary_sensor:
+  - platform: gpio
+    pin: 
+      number: ${pin_vol_up}
+      mode: INPUT_PULLUP
+      inverted: false
+    name: "Vol+"
+    internal: True
+    on_press:
+      then:
+        - script.stop: volume
+        - media_player.volume_up
+        - delay: 100ms 
+        - script.execute: volume 
+        - delay: 500ms 
+        - lambda: |-
+                if (id(player).volume) {
+                id(vol_music).publish_state(id(player).volume);
+                }  
+  - platform: gpio
+    pin: 
+      number: ${pin_vol_down}
+      mode: INPUT_PULLUP
+      inverted: false     
+    name: "Vol-"
+    internal: True
+    on_press:
+      then:
+        - script.stop: volume
+        - media_player.volume_down
+        - delay: 100ms 
+        - script.execute: volume   
+        - delay: 500ms
+        - lambda: |-
+                if (id(player).volume) {
+                id(vol_music).publish_state(id(player).volume);
+                } 
+  - platform: gpio
+    pin: 
+      number: ${pin_play}
+      mode: INPUT_PULLUP
+      inverted: false
+    name: "Play/Pause"
+    internal: True
+    on_press:
+      - media_player.toggle
+
+
+switch:
+  - platform: template
+    id: assist
+    icon: mdi:microphone-message
+    name: "Assistant"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on: 
+       - micro_wake_word.start
+    on_turn_off:
+       - micro_wake_word.stop
+  - platform: template
+    id: led_clock
+    icon: mdi:clock
+    name: "Clock"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_off:
+      - light.turn_off: ring
+  - platform: template
+    id: active_music
+    name: "Active music"
+    optimistic: true
+    internal: True
+    restore_mode: RESTORE_DEFAULT_OFF
+
+
+number:
+  - platform: template
+    id: vol_music
+    optimistic: True
+    min_value: 0
+    max_value: 0.96
+    step: ${vol_step}
+  - platform: template
+    id: vol_assist
+    name: "Assistant volume"
+    icon: mdi:volume-source
+    max_value: 0.80
+    min_value: 0.24
+    step: ${vol_step}
+    restore_value: True
+    optimistic: True
+
+globals:
+   - id: current_hour
+     type: int
+     restore_value: no
+     initial_value: '0'
+   - id: current_minute
+     type: int
+     restore_value: no
+     initial_value: '0'
+
+time:
+  - platform: sntp
+    id: sntp_time
+    update_interval: 10s
+    on_time:
+      - minutes: '*'
+        then:
+          - lambda: |-
+              auto time = id(sntp_time).now();
+              int led_index_h = (12 + (time.hour % 12) * 2 + (time.minute >= 30 ? 1 : 0)) % 24;
+
+              int led_index_m = round((time.minute * 60 + time.second) / 150.0);
+              led_index_m = (led_index_m + 12) % 24; 
+
+              id(current_hour) = led_index_h;
+              id(current_minute) = led_index_m;
+          - if:
+              condition:
+                lambda: |-
+                  return id(led_clock).state == true ;
+              then:
+                - light.addressable_set:
+                    id: ring
+                    red: 0%
+                    green: 0%
+                    blue: 0%
+                    color_brightness: 0%
+                - light.addressable_set:
+                    id: ring
+                    range_from: !lambda return id(current_hour);
+                    range_to: !lambda return id(current_hour);
+                    red: 100%
+                    green: 5%
+                    blue: 5%
+                    color_brightness: 60%
+                - light.addressable_set:
+                    id: ring
+                    range_from: !lambda return id(current_minute);
+                    range_to: !lambda return id(current_minute);
+                    red: 100%
+                    green: 60%
+                    blue: 10%
+                    color_brightness: 60%
+          
+
+output:
+  - platform: ledc
+    pin: ${pin_buzzer}
+    id: rtttl_out
+rtttl:
+  output: rtttl_out
+  id: my_rtttl  
+
+
+light:
+  - platform: esp32_rmt_led_strip
+    default_transition_length: 0.5s
+    id: ring
+    chipset: WS2812
+    pin: ${pin_leds}
+    num_leds: ${leds}
+    rgb_order: GRB
+    name: "Ring"
+    effects:
+      - pulse:
+          name: "Pulse"
+          transition_length: 200ms
+          update_interval: 230ms
+          min_brightness: 15%
+          max_brightness: ${led_power}
+      - addressable_color_wipe:
+          name: "Detecting"
+          colors:
+            - red: 10%
+              green: 100%
+              blue: 100%
+              num_leds: 7
+              gradient: false
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: 19
+          add_led_interval: 30ms 
+          reverse: true
+      - addressable_color_wipe:
+          name: "Loading"
+          colors:
+            - red: 10%
+              green: 100%
+              blue: 100%
+              num_leds: 24
+              gradient: false
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: 1
+          add_led_interval: 125ms
+          reverse: False
+
+
+i2s_audio:
+  - id: i2s_output
+    i2s_lrclk_pin: ${pin_lrclk_spk}
+    i2s_bclk_pin: ${pin_bclk_spk}
+  - id: i2s_input
+    i2s_lrclk_pin: ${pin_lrclk_mic}
+    i2s_bclk_pin: ${pin_bclk_mic}
+
+
+micro_wake_word:
+  id: mww
+  models:
+    - model: alexa
+      probability_cutoff: 0.5
+      sliding_window_size: 2
+  vad:
+  microphone: mic
+  on_wake_word_detected:
+      if:
+        condition:
+            - media_player.is_playing:
+        then:
+         - logger.log: "S T O P    M U S I C"
+         - switch.turn_on: active_music
+         - delay: 100ms 
+         - switch.turn_off: led_clock
+         - script.stop: detecting
+         - delay: 100ms 
+         - media_player.pause       
+         - voice_assistant.start:
+            wake_word: !lambda return wake_word;
+         - script.execute: detecting
+         - delay: 50ms   
+         - rtttl.play: 'two_short:d=4,o=5,b=100:16e6,16e6'
+        else:
+         - switch.turn_off: active_music
+         - switch.turn_off: led_clock
+         - delay: 100ms 
+         - script.stop: detecting
+         - delay: 200ms 
+         - voice_assistant.start:
+            wake_word: !lambda return wake_word;
+         - script.execute: detecting
+         - delay: 50ms   
+         - rtttl.play: 'two_short:d=4,o=5,b=100:16e6,16e6'
+
+
+voice_assistant:
+  id: va
+  microphone: mic
+  media_player: player
+  use_wake_word: false
+  noise_suppression_level: 0
+  volume_multiplier: 1
+  auto_gain: 0dBFS 
+  on_error:
+    - delay: 100ms
+    - script.execute: reset_ww
+    - script.execute: error
+    - script.stop: detecting
+  on_tts_start:
+    - switch.turn_off: led_clock
+    - script.stop: detecting
+    - media_player.volume_set: !lambda return id(vol_assist).state; 
+    - delay: 100ms
+    - script.execute: speaking
+  on_start:
+    - logger.log: "M I C R O P H O N E    S T A R T"
+  on_end:
+      if:
+        condition:
+            - switch.is_on: active_music
+        then:
+          - light.turn_off: ring
+          - switch.turn_off: led_clock
+          - script.execute: reset_ww
+          - wait_until:
+               condition:
+                 not:
+                   media_player.is_announcing:
+          - delay: 1s
+          - media_player.play  
+          - logger.log: "E N D    A S S I S T A N T   P L A Y    M U S I C"
+        else:      
+          - light.turn_off: ring
+          - switch.turn_off: led_clock
+          - delay: 200ms
+          - script.execute: reset_ww
+          - logger.log: "E N D    A S S I S T A N T   W I T H O U T    M U S I C"
+
+
+media_player:
+  - platform: speaker
+    id: player
+    name: "Speaker"
+    internal: False
+    icon: mdi:dots-hexagon
+    task_stack_in_psram: true
+    volume_increment: ${vol_step}
+    volume_min: 0.0
+    volume_max: 0.96
+    media_pipeline:
+      speaker: media_spk_resampling_input
+      format: FLAC     # FLAC is the least processor intensive codec
+      num_channels: 2
+      sample_rate: 48000
+    announcement_pipeline:
+      speaker: announcement_spk_resampling_input
+      format: FLAC     # FLAC is the least processor intensive codec
+      num_channels: 1  # Stereo audio is unnecessary for announcements
+      sample_rate: 48000
+    on_state:
+      then:
+        if:
+          condition:
+            and:
+             - media_player.is_announcing:
+             - not:
+                 voice_assistant.is_running
+          then:
+           - logger.log: "S T A R T    T T S"
+           - switch.turn_off: led_clock
+           - delay: 500ms
+           - script.execute: speaking
+           - delay: 1s
+           - wait_until:
+               condition:
+                 not:
+                   media_player.is_announcing:
+           - script.execute: reset_ww
+           - light.turn_off:  ring 
+           - media_player.volume_set: !lambda return (id(vol_music).state);
+           - logger.log: "E N D   T T S"
+           - delay: 4s
+           - switch.turn_on: led_clock
+          else:
+            if:
+              condition:
+                - media_player.is_announcing:
+              then:
+                - logger.log: "S T A R T    A S S I S T"
+                - wait_until:
+                    condition:
+                      not:
+                        media_player.is_announcing:
+                - logger.log: "E N D    A S S I S T"
+                - script.execute: reset_ww
+                - light.turn_off:  ring 
+                - media_player.volume_set: !lambda return (id(vol_music).state);
+                - delay: 4s
+                - switch.turn_on: led_clock
+
+
+speaker:
+  - platform: i2s_audio
+    id: i2s_audio_speaker
+    sample_rate: 48000
+    i2s_mode: primary
+    i2s_dout_pin: ${pin_din_spk}
+    bits_per_sample: 32bit
+    i2s_audio_id: i2s_output
+    dac_type: external
+    channel: stereo
+    timeout: never
+    buffer_duration: 100ms
+  - platform: mixer
+    id: mixer_speaker_id
+    output_speaker: i2s_audio_speaker
+    source_speakers:
+      - id: announcement_spk_mixer_input
+      - id: media_spk_mixer_input
+  - platform: resampler
+    id: media_spk_resampling_input
+    output_speaker: media_spk_mixer_input
+  - platform: resampler
+    id: announcement_spk_resampling_input
+    output_speaker: announcement_spk_mixer_input
+
+
+microphone:
+  - platform: i2s_audio
+    id: mic
+    adc_type: external
+    i2s_din_pin: ${pin_din_mic}
+    channel: left
+    i2s_audio_id: i2s_input
+
+
+script:
+  - id: reset_ww
+    then:
+     - micro_wake_word.stop     
+     - delay: 250ms
+     - micro_wake_word.start
+  - id: detecting
+    then:
+      - switch.turn_off: led_clock
+      - delay: 250ms
+      - light.turn_on:
+         id: ring
+         red: 20%
+         green: 80%
+         blue: 100%
+         brightness: ${led_power}
+         effect: Detecting
+      - delay: ${waiting_time}
+      - voice_assistant.stop
+      - light.turn_off: ring 
+      - script.execute: reset_ww
+      - delay: 5s
+      - switch.turn_on: led_clock
+  - id: loading
+    then:
+      - switch.turn_off: led_clock
+      - delay: 250ms
+      - light.turn_on:
+         id: ring
+         red: 20%
+         green: 80%
+         blue: 100%
+         brightness: ${led_power}
+         effect: loading
+      - delay: 3s
+      - light.turn_off: ring
+      - delay: 2s
+      - switch.turn_on: led_clock
+  - id: speaking
+    then:
+      - light.turn_on:
+         id: ring
+         red: 0%
+         green: 100%
+         blue: 0%
+         brightness: ${led_power}
+         effect: Pulse
+  - id: error
+    then:
+      - switch.turn_off: led_clock
+      - delay: 250ms
+      - light.turn_on:
+         id: ring
+         red: 100%
+         green: 0%
+         blue: 0%
+         brightness: ${led_power}
+         effect: none
+      - delay: 3s
+      - light.turn_off: ring
+      - delay: 1s
+      - switch.turn_on: led_clock
+  - id: volume
+    then:
+      - switch.turn_off: led_clock
+      - light.turn_off: ring
+      - delay: 150ms
+      - light.addressable_set:
+         id: ring
+         range_from: 0
+         range_to: !lambda return round(id(player).volume * 25);
+         red: 25%
+         green: 25%
+         blue: 100%
+      - delay: 1s
+      - light.turn_off: ring
+      - delay: 5s
+      - switch.turn_on: led_clock
