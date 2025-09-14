@@ -50,7 +50,7 @@ You can set a separate volume level for the assistant and listening time. Also y
 ![IMG_20250509_204452141_1](https://github.com/user-attachments/assets/7097dec2-f08d-48ca-9de9-8c2a83cad397)
 
 ## 6. Summary
-I recommend a 2A or 3A power supply for the speaker. There is currently a problem with stereo playback in the espohome version >2025.5. I recommend downgrading to version 2025.4 until the problem is solved. Printing profiles you can find [here](https://makerworld.com/en/models/1520535-hexavoice-assistant#profileId-1593371)
+I recommend a 2A or 3A power supply for the speaker. Printing profiles you can find [here](https://makerworld.com/en/models/1520535-hexavoice-assistant#profileId-1593371)
 
 
    
