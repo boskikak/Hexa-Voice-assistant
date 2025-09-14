@@ -25,22 +25,25 @@ esphome:
 
 esp32:
   board: esp32-s3-devkitc-1
+  cpu_frequency: 240MHz
   variant: esp32s3
   flash_size: 16MB
   framework:
     type: esp-idf
     version: recommended
     sdkconfig_options:
-      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
       CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
       CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
       CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+
+      CONFIG_SPIRAM_RODATA: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
 
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
       CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
 
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
-      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
 
 psram:
   mode: octal
@@ -80,8 +83,10 @@ wifi:
 captive_portal:
 
 
+
 button:
   - platform: restart
+    id: reboot
     name: "Reboot"
     icon: mdi:restart
 
@@ -92,36 +97,48 @@ binary_sensor:
       mode: INPUT_PULLUP
       inverted: false
     name: "Vol+"
+    id: vol_up
     internal: True
     on_press:
-      then:
-        - script.stop: volume
-        - media_player.volume_up
-        - delay: 100ms 
-        - script.execute: volume 
-        - delay: 500ms 
-        - lambda: |-
-                if (id(player).volume) {
-                id(vol_music).publish_state(id(player).volume);
-                }  
+      if:
+        condition:
+            - binary_sensor.is_on: vol_down
+        then:
+           - button.press: reboot
+        else:
+          - script.stop: volume
+          - media_player.volume_up
+          - delay: 100ms 
+          - script.execute: volume 
+          - delay: 500ms 
+          - lambda: |-
+                  if (id(player).volume) {
+                  id(vol_music).publish_state(id(player).volume);
+                  }  
   - platform: gpio
     pin: 
       number: ${pin_vol_down}
       mode: INPUT_PULLUP
       inverted: false     
     name: "Vol-"
+    id: vol_down
     internal: True
     on_press:
-      then:
-        - script.stop: volume
-        - media_player.volume_down
-        - delay: 100ms 
-        - script.execute: volume   
-        - delay: 500ms
-        - lambda: |-
-                if (id(player).volume) {
-                id(vol_music).publish_state(id(player).volume);
-                } 
+      if:
+        condition:
+            - binary_sensor.is_on: vol_up
+        then:
+           - button.press: reboot
+        else:
+          - script.stop: volume
+          - media_player.volume_down
+          - delay: 100ms 
+          - script.execute: volume   
+          - delay: 500ms
+          - lambda: |-
+                  if (id(player).volume) {
+                  id(vol_music).publish_state(id(player).volume);
+                  } 
   - platform: gpio
     pin: 
       number: ${pin_play}
@@ -131,6 +148,11 @@ binary_sensor:
     internal: True
     on_press:
       - media_player.toggle
+    on_double_click:
+      min_length: 30ms
+      max_length: 500ms
+      then:
+        - script.execute: deaf  
 
 
 switch:
@@ -291,9 +313,11 @@ i2s_audio:
   - id: i2s_output
     i2s_lrclk_pin: ${pin_lrclk_spk}
     i2s_bclk_pin: ${pin_bclk_spk}
+    use_legacy: true #uses old library but stereo music works
   - id: i2s_input
     i2s_lrclk_pin: ${pin_lrclk_mic}
     i2s_bclk_pin: ${pin_bclk_mic}
+    use_legacy: true
 
 
 micro_wake_word:
@@ -553,3 +577,36 @@ script:
       - light.turn_off: ring
       - delay: 5s
       - switch.turn_on: led_clock
+  - id: deaf
+    then:
+      if:
+        condition:
+            - switch.is_on: assist
+        then:
+         - switch.turn_off: led_clock
+         - delay: 250ms
+         - light.turn_on:
+            id: ring
+            red: 100%
+            green: 0%
+            blue: 0%
+            brightness: ${led_power}
+         - switch.toggle: assist
+         - delay: 1s
+         - light.turn_off: ring
+         - delay: 1s
+         - switch.turn_on: led_clock
+        else:
+         - switch.turn_off: led_clock
+         - delay: 250ms
+         - light.turn_on:
+            id: ring
+            red: 0%
+            green: 100%
+            blue: 0%
+            brightness: ${led_power}
+         - switch.toggle: assist
+         - delay: 1s
+         - light.turn_off: ring
+         - delay: 1s
+         - switch.turn_on: led_clock
