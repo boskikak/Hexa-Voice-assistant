@@ -102,7 +102,7 @@ binary_sensor:
     on_press:
       if:
         condition:
-            - binary_sensor.is_on: vol_down
+            - binary_sensor.is_off: vol_down
         then:
            - button.press: reboot
         else:
@@ -126,7 +126,7 @@ binary_sensor:
     on_press:
       if:
         condition:
-            - binary_sensor.is_on: vol_up
+            - binary_sensor.is_off: vol_up
         then:
            - button.press: reboot
         else:
