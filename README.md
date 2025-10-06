@@ -59,6 +59,7 @@ I recommend a 2A or 3A power supply for the speaker. Printing profiles you can f
  - click at the same time vol+ & vol- to restart device
 
 10.2025
+  - stereo sounds with Esphome >2024.5 (using old libraries i2s)
   - choose from list your wake word and set your first choice
    
 
