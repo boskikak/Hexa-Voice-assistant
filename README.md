@@ -52,6 +52,13 @@ You can set a separate volume level for the assistant and listening time. Also y
 ## 6. Summary
 I recommend a 2A or 3A power supply for the speaker. Printing profiles you can find [here](https://makerworld.com/en/models/1520535-hexavoice-assistant#profileId-1593371)
 
+## 7. What's news?
 
+09.2025:
+ - double click play button to unable/enable microphone
+ - click at the same time vol+ & vol- to restart device
+
+10.2025
+  - choose from list your wake word and set your first choice
    
 
