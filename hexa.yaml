@@ -5,7 +5,8 @@ substitutions:
   led_power: '40%'
   vol_step: "0.08"  #volume step
   vol_start: "0.48" #starting music volume
-
+  your_wake_word: "Alexa" #"Okay Nabu" or "Hey Jarvis" choose your wake word after starting speaker
+  
 # PINOUT
   pin_buzzer: GPIO21 
   pin_leds: GPIO38 #DI
@@ -324,8 +325,13 @@ micro_wake_word:
   id: mww
   models:
     - model: alexa
+      id: alexa
       probability_cutoff: 0.5
       sliding_window_size: 2
+    - model: https://github.com/kahrendt/microWakeWord/releases/download/okay_nabu_20241226.3/okay_nabu.json
+      id: okay_nabu
+    - model: hey_jarvis
+      id: hey_jarvis
   vad:
   microphone: mic
   on_wake_word_detected:
@@ -498,6 +504,43 @@ microphone:
     channel: left
     i2s_audio_id: i2s_input
 
+
+select:
+  - platform: template
+    name: "Wake word"
+    optimistic: true
+    initial_option: ${your_wake_word}
+    icon: mdi:microphone
+    restore_value: true
+    entity_category: config
+    options:
+      - Alexa
+      - Okay Nabu
+      - Hey Jarvis
+    on_value:
+      if:
+        condition:
+            lambda: 'return x == "Alexa";'
+        then:
+          - micro_wake_word.enable_model: alexa
+          - micro_wake_word.disable_model: okay_nabu
+          - micro_wake_word.disable_model: hey_jarvis
+        else:
+          if:
+             condition:
+                 lambda: 'return x == "Okay Nabu";'
+             then:
+                 - micro_wake_word.enable_model: okay_nabu
+                 - micro_wake_word.disable_model: alexa
+                 - micro_wake_word.disable_model: hey_jarvis
+             else:
+               if:
+                  condition:
+                      lambda: 'return x == "Hey Jarvis";'
+                  then:
+                      - micro_wake_word.enable_model: hey_jarvis
+                      - micro_wake_word.disable_model: alexa
+                      - micro_wake_word.disable_model: okay_nabu
 
 script:
   - id: reset_ww
